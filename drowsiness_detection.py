@@ -23,7 +23,7 @@ def eye_aspect_ratio(eye):
 
 // Sound missing
 # def play_alarm():
-#     playsound("Alert1.mpeg")
+#     playsound("Alert1.mp3")
 
 count=0
 ear_ratio=0.25
