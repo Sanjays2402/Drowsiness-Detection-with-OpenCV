@@ -21,7 +21,7 @@ def eye_aspect_ratio(eye):
 
     return ear
 
-// Alarm trigger function
+# Alarm trigger function
 def play_alarm():
     playsound("files/Alert1.mp3")
 
