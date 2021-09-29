@@ -21,9 +21,9 @@ def eye_aspect_ratio(eye):
 
     return ear
 
-// Sound missing
-# def play_alarm():
-#     playsound("files/Alert1.mp3")
+// Alarm trigger function
+def play_alarm():
+    playsound("files/Alert1.mp3")
 
 count=0
 ear_ratio=0.25
