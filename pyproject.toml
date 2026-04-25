@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drowsiness-detector"
+version = "1.0.0"
+description = "Real-time driver drowsiness detection using the Eye Aspect Ratio (EAR)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Sanjay Santhanam" }]
+keywords = ["computer-vision", "drowsiness", "driver-monitoring", "ear", "opencv", "mediapipe"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Multimedia :: Video :: Capture",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+dependencies = [
+    "numpy>=1.21",
+    "opencv-python>=4.5",
+]
+
+[project.optional-dependencies]
+mediapipe = ["mediapipe>=0.10"]
+legacy = ["face-recognition>=1.3.0"]
+audio = ["playsound>=1.2.2"]
+dev = [
+    "pytest>=7",
+    "pytest-cov>=4",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+drowsy = "drowsiness.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Sanjays2402/Drowsiness-Detection-with-OpenCV"
+Issues = "https://github.com/Sanjays2402/Drowsiness-Detection-with-OpenCV/issues"
+Paper = "https://ieeexplore.ieee.org/document/9532758"
+
+[tool.setuptools]
+packages = ["drowsiness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
