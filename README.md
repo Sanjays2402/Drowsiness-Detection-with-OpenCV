@@ -1,4 +1,4 @@
-# 🚗💤 Drowsiness Detection
+# Drowsiness Detection
 
 [![Tests](https://github.com/Sanjays2402/Drowsiness-Detection-with-OpenCV/actions/workflows/tests.yml/badge.svg)](https://github.com/Sanjays2402/Drowsiness-Detection-with-OpenCV/actions/workflows/tests.yml)
 [![IEEE](https://img.shields.io/badge/IEEE-Published%20Paper-00629B?logo=ieee&logoColor=white)](https://ieeexplore.ieee.org/document/9532758)
@@ -9,7 +9,7 @@
 
 Real-time driver drowsiness detection using the **Eye Aspect Ratio (EAR)**. Originally an IEEE conference paper; this repo packages it as a production-shaped Python library with a CLI, two interchangeable landmark backends, a stateful detector with event hooks, and a headless batch-analysis mode.
 
-> 📄 S. Santhanam et al., *"Real-Time Drowsiness Detection using Computer Vision"*, **2021 5th ICCMC (IEEE)**. [Read the paper →](https://ieeexplore.ieee.org/document/9532758)
+> S. Santhanam et al., *"Real-Time Drowsiness Detection using Computer Vision"*, **2021 5th ICCMC (IEEE)**. [Read the paper →](https://ieeexplore.ieee.org/document/9532758)
 
 ---
 
@@ -73,15 +73,15 @@ from drowsiness import DrowsinessDetector, DrowsinessConfig
 cfg = DrowsinessConfig(ear_threshold=0.23, closed_frames_to_alarm=24)
 
 with DrowsinessDetector(cfg, on_event=lambda e: print("DROWSY!", e)) as detector:
-    cap = cv2.VideoCapture(0)
-    while True:
-        ok, frame = cap.read()
-        if not ok:
-            break
-        result = detector.process(frame)
-        # result.state: EyeState.AWAKE | EyeState.DROWSY
-        # result.ear:   current Eye Aspect Ratio
-        # result.event: DrowsyEvent or None (fires once per drowsy episode)
+ cap = cv2.VideoCapture(0)
+ while True:
+ ok, frame = cap.read()
+ if not ok:
+ break
+ result = detector.process(frame)
+ # result.state: EyeState.AWAKE | EyeState.DROWSY
+ # result.ear: current Eye Aspect Ratio
+ # result.event: DrowsyEvent or None (fires once per drowsy episode)
 ```
 
 ---
@@ -93,13 +93,13 @@ with DrowsinessDetector(cfg, on_event=lambda e: print("DROWSY!", e)) as detector
 ```
 EAR = (||p2 - p6|| + ||p3 - p5||) / (2 × ||p1 - p4||)
 
-       p2    p3
-      •--------•
-     /          \
-p1 •            • p4
-     \          /
-      •--------•
-       p6    p5
+ p2 p3
+ •--------•
+ / \
+p1 • • p4
+ \ /
+ •--------•
+ p6 p5
 ```
 
 - **Eyes open** → EAR ≈ 0.30
@@ -109,11 +109,11 @@ p1 •            • p4
 ### Detection FSM
 
 ```
-                 EAR < threshold (N frames)
-   ┌──────────┐ ─────────────────────────▶ ┌──────────┐
-   │  AWAKE    │                           │  DROWSY   │
-   └──────────┘ ◀───────────────────────── └──────────┘
-                EAR ≥ threshold (M frames)
+ EAR < threshold (N frames)
+ ┌──────────┐ ─────────────────────────▶ ┌──────────┐
+ │ AWAKE │ │ DROWSY │
+ └──────────┘ ◀───────────────────────── └──────────┘
+ EAR ≥ threshold (M frames)
 ```
 
 The state machine de-bounces both directions: a brief blink doesn't trigger an alarm, and a single open frame doesn't immediately clear a drowsy state.
@@ -122,21 +122,21 @@ The state machine de-bounces both directions: a brief blink doesn't trigger an a
 
 ```
 Webcam / Video
-      │
-      ▼
- Landmark backend  ──▶  6 EAR points per eye
+ │
+ ▼
+ Landmark backend ──▶ 6 EAR points per eye
  (MediaPipe FaceMesh
-  or face_recognition)
-      │
-      ▼
- EAR computation  ──▶  average EAR
-      │
-      ▼
- Drowsy FSM       ──▶  state, closed_frames, event?
-      │
-      ├─ Alarm (background, debounced)
-      ├─ on_event callback (your code)
-      └─ Visualization overlay
+ or face_recognition)
+ │
+ ▼
+ EAR computation ──▶ average EAR
+ │
+ ▼
+ Drowsy FSM ──▶ state, closed_frames, event?
+ │
+ ├─ Alarm (background, debounced)
+ ├─ on_event callback (your code)
+ └─ Visualization overlay
 ```
 
 ---
@@ -145,13 +145,13 @@ Webcam / Video
 
 ```python
 DrowsinessConfig(
-    ear_threshold=0.25,            # below = closed eye
-    closed_frames_to_alarm=20,     # frames below threshold → DROWSY
-    open_frames_to_clear=5,        # frames above threshold → AWAKE
-    alarm_sound="assets/alert1.mp3",
-    alarm_cooldown_s=3.0,          # min seconds between alarm playbacks
-    backend="mediapipe",           # or "face_recognition"
-    enable_alarm=True,
+ ear_threshold=0.25, # below = closed eye
+ closed_frames_to_alarm=20, # frames below threshold → DROWSY
+ open_frames_to_clear=5, # frames above threshold → AWAKE
+ alarm_sound="assets/alert1.mp3",
+ alarm_cooldown_s=3.0, # min seconds between alarm playbacks
+ backend="mediapipe", # or "face_recognition"
+ enable_alarm=True,
 )
 ```
 
@@ -173,9 +173,9 @@ DrowsinessConfig(
 
 ```
 report/
-├── ear.csv         # frame-by-frame EAR & state
-├── events.jsonl    # one record per AWAKE→DROWSY transition
-└── summary.json    # counts, parameters, timestamps
+├── ear.csv # frame-by-frame EAR & state
+├── events.jsonl # one record per AWAKE→DROWSY transition
+└── summary.json # counts, parameters, timestamps
 ```
 
 Useful for fleet review, evaluating threshold changes, or feeding downstream analytics without a GUI.
@@ -186,15 +186,15 @@ Useful for fleet review, evaluating threshold changes, or feeding downstream ana
 
 ```
 drowsiness/
-├── __init__.py        # public API
-├── ear.py             # eye_aspect_ratio() + helpers
-├── landmarks.py       # MediaPipe + face_recognition backends
-├── alarm.py           # background, cooldown-debounced audio
-├── detector.py        # DrowsinessDetector + FSM + events
-├── visualization.py   # cv2 overlay (EAR, FPS, banner)
-└── cli.py             # `drowsy` entrypoint
+├── __init__.py # public API
+├── ear.py # eye_aspect_ratio() + helpers
+├── landmarks.py # MediaPipe + face_recognition backends
+├── alarm.py # background, cooldown-debounced audio
+├── detector.py # DrowsinessDetector + FSM + events
+├── visualization.py # cv2 overlay (EAR, FPS, banner)
+└── cli.py # `drowsy` entrypoint
 tests/
-└── test_detector.py   # 14 cases, mocked landmark backend
+└── test_detector.py # 14 cases, mocked landmark backend
 assets/
 └── alert1.mp3
 ```
@@ -216,11 +216,11 @@ This is still an **EAR-based** system. Known weaknesses:
 
 ```bibtex
 @inproceedings{santhanam2021drowsiness,
-  title  = {Real-Time Drowsiness Detection using Computer Vision},
-  author = {Santhanam, S. and others},
-  booktitle = {2021 5th International Conference on Computing Methodologies and Communication (ICCMC)},
-  year   = {2021},
-  doi    = {10.1109/ICCMC51019.2021.9418325}
+ title = {Real-Time Drowsiness Detection using Computer Vision},
+ author = {Santhanam, S. and others},
+ booktitle = {2021 5th International Conference on Computing Methodologies and Communication (ICCMC)},
+ year = {2021},
+ doi = {10.1109/ICCMC51019.2021.9418325}
 }
 ```
 
