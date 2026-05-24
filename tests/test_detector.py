@@ -337,3 +337,75 @@ def test_subprocess_player_uses_argv_not_shell(monkeypatch, tmp_path):
     # Path is passed as its own argv element, untouched -> no shell
     # parsing of the apostrophe or space.
     assert argv[-1] == tricky
+
+
+# ---- HTML report -----------------------------------------------------
+
+
+def test_report_renders_self_contained_html(tmp_path):
+    """render_report should produce a single-file HTML dashboard with
+    no external dependencies and the expected content for both empty
+    and populated event lists.
+    """
+    import json
+    import csv as _csv
+    from drowsiness.report import render_report
+
+    # Minimal but valid analyze output.
+    (tmp_path / "summary.json").write_text(json.dumps({
+        "source": "drive.mp4",
+        "frames": 300,
+        "input_fps": 30.0,
+        "closed_frames": 25,
+        "drowsy_events": 1,
+        "ear_threshold": 0.25,
+        "closed_frames_to_alarm": 20,
+        "wall_seconds": 1.2,
+        "events": [{"frame": 60, "t_seconds": 2.0, "ear": 0.18, "closed_frames": 21}],
+    }))
+    with (tmp_path / "ear.csv").open("w", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["frame", "t_seconds", "ear", "state", "closed_frames"])
+        for i in range(300):
+            t = i / 30.0
+            ear = 0.18 if 50 <= i <= 80 else 0.30
+            state = "drowsy" if 70 <= i <= 78 else "awake"
+            w.writerow([i, f"{t:.3f}", f"{ear:.4f}", state, 0])
+
+    html_path = render_report(tmp_path, version="9.9.9")
+    body = html_path.read_text()
+
+    # Self-contained: no remote script/style tags.
+    assert "<script" not in body
+    assert "http://" not in body or "github.com" in body  # only repo link
+    assert "https://" in body  # at least the repo footer link
+    assert "cdn." not in body
+    # Key UI bits.
+    assert "Drowsiness analysis" in body
+    assert "drive.mp4" in body
+    assert "9.9.9" in body
+    assert "<svg" in body  # inline chart, not <img>
+    assert "threshold 0.25" in body
+    # Event row rendered.
+    assert "0.180" in body  # event EAR
+
+
+def test_report_handles_zero_events(tmp_path):
+    import json
+    from drowsiness.report import render_report
+
+    (tmp_path / "summary.json").write_text(json.dumps({
+        "source": "calm.mp4",
+        "frames": 100,
+        "input_fps": 25.0,
+        "closed_frames": 0,
+        "drowsy_events": 0,
+        "ear_threshold": 0.25,
+        "closed_frames_to_alarm": 20,
+        "wall_seconds": 0.5,
+        "events": [],
+    }))
+    # No ear.csv on purpose: still produce a graceful report.
+    html_path = render_report(tmp_path)
+    body = html_path.read_text()
+    assert "No drowsiness events detected" in body

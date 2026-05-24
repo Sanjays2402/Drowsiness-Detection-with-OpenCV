@@ -1,0 +1,30 @@
+{
+  "source": "samples/long-drive.mp4",
+  "frames": 5400,
+  "input_fps": 30.0,
+  "closed_frames": 794,
+  "drowsy_events": 3,
+  "ear_threshold": 0.25,
+  "closed_frames_to_alarm": 20,
+  "wall_seconds": 7.2,
+  "events": [
+    {
+      "frame": 1069,
+      "t_seconds": 35.63333333333333,
+      "ear": 0.18775050173695224,
+      "closed_frames": 20
+    },
+    {
+      "frame": 2839,
+      "t_seconds": 94.63333333333334,
+      "ear": 0.17217754690221174,
+      "closed_frames": 20
+    },
+    {
+      "frame": 4459,
+      "t_seconds": 148.63333333333333,
+      "ear": 0.17421822639432752,
+      "closed_frames": 20
+    }
+  ]
+}

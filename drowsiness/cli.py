@@ -26,9 +26,19 @@ from typing import Optional
 import cv2
 
 from .detector import DrowsinessConfig, DrowsinessDetector
+from .report import render_report
 from .visualization import draw_overlay
 
 logger = logging.getLogger("drowsy")
+
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    try:
+        _VERSION = _pkg_version("drowsiness-detector")
+    except PackageNotFoundError:
+        _VERSION = "0.0.0"
+except Exception:  # pragma: no cover
+    _VERSION = "0.0.0"
 
 
 def _open_capture(source: str) -> cv2.VideoCapture:
@@ -179,6 +189,13 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     summary_path.write_text(json.dumps(summary, indent=2))
 
     print(f"frames={frames} drowsy_events={len(events)} report={output_dir}")
+
+    if not getattr(args, "no_html", False):
+        try:
+            html_path = render_report(output_dir, version=_VERSION)
+            print(f"html={html_path}")
+        except Exception as err:  # pragma: no cover - rendering robustness
+            logger.warning("HTML report rendering failed: %s", err)
     return 0
 
 
@@ -216,6 +233,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(analyze)
     analyze.add_argument("--output-dir", default=None,
                          help="Directory for ear.csv / events.jsonl / summary.json.")
+    analyze.add_argument("--no-html", action="store_true",
+                         help="Skip rendering the report.html dashboard.")
     analyze.set_defaults(func=_cmd_analyze)
 
     return parser

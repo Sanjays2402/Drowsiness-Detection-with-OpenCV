@@ -52,8 +52,9 @@ pip install -e ".[legacy,audio]"
 # Live webcam detection with overlay
 drowsy run 0
 
-# Headless batch analysis of a video — emits CSV/JSONL/JSON report
+# Headless batch analysis of a video — emits CSV/JSONL/JSON + a self-contained HTML dashboard
 drowsy analyze drive.mp4 --output-dir report/
+# → report/report.html  (open it; no JS, no CDN, prints cleanly)
 
 # Tune sensitivity
 drowsy run 0 --ear-threshold 0.22 --frame-count 24
