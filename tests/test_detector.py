@@ -381,11 +381,11 @@ def test_report_renders_self_contained_html(tmp_path):
     assert "https://" in body  # at least the repo footer link
     assert "cdn." not in body
     # Key UI bits.
-    assert "Drowsiness analysis" in body
+    assert "drowsy analyze" in body
     assert "drive.mp4" in body
     assert "9.9.9" in body
     assert "<svg" in body  # inline chart, not <img>
-    assert "threshold 0.25" in body
+    assert "thr=0.25" in body  # threshold label on the chart
     # Event row rendered.
     assert "0.180" in body  # event EAR
 
@@ -408,4 +408,4 @@ def test_report_handles_zero_events(tmp_path):
     # No ear.csv on purpose: still produce a graceful report.
     html_path = render_report(tmp_path)
     body = html_path.read_text()
-    assert "No drowsiness events detected" in body
+    assert "no drowsy events" in body
