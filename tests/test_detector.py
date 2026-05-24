@@ -245,3 +245,95 @@ def test_alarm_reset_allows_immediate_retrigger(tmp_path):
     assert alarm.trigger() is True
     time.sleep(0.05)
     assert len(plays) == 2
+
+
+# ---- Alarm: missing-file should NOT burn cooldown --------------------
+
+
+def test_alarm_missing_file_does_not_burn_cooldown(tmp_path):
+    """Regression: previously the cooldown timer was set before the
+    file-existence check, so a missing alarm file plus a long cooldown
+    would silently suppress the very first real playback once the file
+    appeared.
+    """
+    missing = tmp_path / "later.mp3"
+    plays: list[str] = []
+    alarm = Alarm(
+        sound_path=str(missing),
+        cooldown=60.0,
+        player=lambda p: plays.append(p),
+    )
+
+    # First trigger: file missing -> False, no cooldown consumed.
+    assert alarm.trigger() is False
+
+    # File appears later in the run.
+    missing.write_bytes(b"\x00")
+
+    # Should fire immediately (cooldown was never claimed by the miss).
+    assert alarm.trigger() is True
+    time.sleep(0.05)
+    assert len(plays) == 1
+
+
+# ---- Default audio player fallthrough --------------------------------
+
+
+def test_default_player_falls_through_when_playsound_raises(monkeypatch):
+    """Regression: if playsound is importable but raises at runtime,
+    _default_player used to return silently. It now logs and falls
+    through to the OS player chain.
+    """
+    from drowsiness import alarm as alarm_mod
+
+    calls: list[str] = []
+
+    def fake_playsound(_path):
+        calls.append("playsound")
+        return False  # forces the helper to report "did not play"
+
+    def fake_winsound(_path):
+        calls.append("winsound")
+        return False
+
+    def fake_subprocess(_path):
+        calls.append("subprocess")
+        return True
+
+    monkeypatch.setattr(alarm_mod, "_try_playsound", fake_playsound)
+    monkeypatch.setattr(alarm_mod, "_try_winsound", fake_winsound)
+    monkeypatch.setattr(alarm_mod, "_try_subprocess", fake_subprocess)
+
+    alarm_mod._default_player("/tmp/whatever.mp3")
+
+    # All three were attempted in order; the last one returned True
+    # so the chain stopped there.
+    assert calls == ["playsound", "winsound", "subprocess"]
+
+
+def test_subprocess_player_uses_argv_not_shell(monkeypatch, tmp_path):
+    """Paths with shell-special characters (apostrophes, spaces) must
+    not break the alarm. Previously os.system + f'{path!r}' could
+    produce a command bash would mis-parse.
+    """
+    from drowsiness import alarm as alarm_mod
+
+    captured: list[list[str]] = []
+
+    class _FakeCompleted:
+        returncode = 0
+
+    def fake_run(argv, **_kwargs):
+        captured.append(list(argv))
+        return _FakeCompleted()
+
+    monkeypatch.setattr(alarm_mod.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(alarm_mod.subprocess, "run", fake_run)
+
+    tricky = str(tmp_path / "my'song with spaces.mp3")
+    assert alarm_mod._try_subprocess(tricky) is True
+    assert captured, "subprocess.run should have been called"
+    argv = captured[0]
+    # Path is passed as its own argv element, untouched -> no shell
+    # parsing of the apostrophe or space.
+    assert argv[-1] == tricky

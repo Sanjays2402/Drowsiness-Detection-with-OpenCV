@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -18,40 +20,69 @@ from typing import Callable, Optional
 logger = logging.getLogger(__name__)
 
 
-def _default_player(path: str) -> None:
-    """Play ``path`` synchronously using whichever lib is available."""
+def _try_playsound(path: str) -> bool:
+    """Return True iff playsound is installed and played without raising."""
     try:
-        from playsound import playsound
-        playsound(path)
-        return
+        from playsound import playsound  # type: ignore[import-not-found]
     except ImportError:
-        pass
+        return False
+    try:
+        playsound(path)
+        return True
     except Exception as err:  # pragma: no cover - playback errors
-        logger.warning("playsound failed: %s", err)
-        return
+        # Previously a runtime failure here returned silently and never
+        # fell through to the OS players. Now we log and fall through
+        # so a flaky playsound install doesn't disable the alarm.
+        logger.warning("playsound failed (%s); falling back to OS player", err)
+        return False
 
-    # Fallback: macOS 'afplay', Linux 'aplay/paplay', Windows winsound.
-    if os.name == "nt":  # pragma: no cover - Windows-only
-        try:
-            import winsound
-            winsound.PlaySound(path, winsound.SND_FILENAME)
-            return
-        except Exception as err:
-            logger.warning("winsound failed: %s", err)
-            return
 
+def _try_winsound(path: str) -> bool:  # pragma: no cover - Windows-only
+    if os.name != "nt":
+        return False
+    try:
+        import winsound  # type: ignore[import-not-found]
+        winsound.PlaySound(path, winsound.SND_FILENAME)
+        return True
+    except Exception as err:
+        logger.warning("winsound failed: %s", err)
+        return False
+
+
+def _try_subprocess(path: str) -> bool:
+    """Try common OS audio players with safe arg passing (no shell)."""
     for cmd in ("afplay", "paplay", "aplay"):
-        if _has_binary(cmd):
-            os.system(f"{cmd} {path!r} > /dev/null 2>&1")  # noqa: S605
-            return
-    logger.warning("No audio player available; alarm path=%s not played", path)
-
-
-def _has_binary(name: str) -> bool:
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        if os.path.isfile(os.path.join(directory, name)):
+        exe = shutil.which(cmd)
+        if not exe:
+            continue
+        try:
+            subprocess.run(
+                [exe, path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
             return True
+        except OSError as err:  # pragma: no cover - exec failure
+            logger.warning("%s exec failed: %s", cmd, err)
+            continue
     return False
+
+
+def _default_player(path: str) -> None:
+    """Play ``path`` synchronously using whichever backend is available.
+
+    Order: playsound (if importable) → winsound (Windows) → afplay/paplay/
+    aplay via ``subprocess.run`` (no shell, so paths with shell-metachars
+    like apostrophes or spaces are safe).
+    """
+    if _try_playsound(path):
+        return
+    if _try_winsound(path):
+        return
+    if _try_subprocess(path):
+        return
+    logger.warning("No audio player available; alarm path=%s not played", path)
 
 
 class Alarm:
@@ -103,11 +134,17 @@ class Alarm:
         with self._lock:
             if now - self._last_played < self._cooldown:
                 return False
-            self._last_played = now
 
         path = self._resolve_path()
         if path is None:
             return False
+
+        # Only burn the cooldown slot once we've confirmed the file
+        # exists. Otherwise a missing alarm file plus a permanent
+        # cooldown lockout would mean the very first time the file
+        # appeared, we'd still suppress the playback.
+        with self._lock:
+            self._last_played = now
 
         thread = threading.Thread(
             target=self._player, args=(path,), daemon=True, name="drowsy-alarm"

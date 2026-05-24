@@ -113,6 +113,8 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     frames = 0
     closed = 0
     started = time.monotonic()
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    last_report = started
 
     with DrowsinessDetector(cfg) as detector, \
          csv_path.open("w", newline="") as csv_f, \
@@ -140,6 +142,27 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
                 events_f.write(json.dumps(payload) + "\n")
                 events.append(payload)
             frames += 1
+
+            # Heartbeat every 2 seconds of wall time so long videos
+            # don't look hung. Goes to stderr so it doesn't pollute
+            # any stdout consumers piping the final summary line.
+            now = time.monotonic()
+            if now - last_report >= 2.0:
+                if total_frames > 0:
+                    pct = 100.0 * frames / total_frames
+                    print(
+                        f"  analyze: {frames}/{total_frames} frames "
+                        f"({pct:5.1f}%) events={len(events)}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"  analyze: {frames} frames events={len(events)}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                last_report = now
 
     elapsed = time.monotonic() - started
     summary = {
