@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Drowsiness Detection — Live EAR Demo</title>
+  <meta name="description" content="In-browser real-time driver drowsiness detection using the Eye Aspect Ratio (EAR) and MediaPipe FaceMesh. Runs fully client-side — no video leaves your device." />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b8cff'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.5' stroke-dasharray='33' stroke-dashoffset='8'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <h1>Drowsiness Detection</h1>
+          <p>Real-time Eye Aspect Ratio &middot; MediaPipe FaceMesh &middot; 100% on-device</p>
+        </div>
+      </div>
+      <a class="paper-link" href="https://ieeexplore.ieee.org/document/9532758" target="_blank" rel="noopener">
+        IEEE&nbsp;Paper&nbsp;&rarr;
+      </a>
+    </header>
+
+    <main class="stage">
+      <section class="viewport-wrap" aria-label="Camera viewport">
+        <div class="viewport">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+
+          <div id="banner" class="banner banner--idle">
+            <span class="banner-dot"></span>
+            <span id="banner-text">Camera off</span>
+          </div>
+
+          <div id="startCover" class="start-cover">
+            <button id="startBtn" class="start-btn" type="button">
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+              Start camera
+            </button>
+            <p class="start-hint">Nothing is uploaded. All processing happens in this tab.</p>
+          </div>
+
+          <div id="loadCover" class="load-cover" hidden>
+            <div class="spinner" aria-hidden="true"></div>
+            <p id="loadText">Loading FaceMesh model&hellip;</p>
+          </div>
+        </div>
+
+        <div class="readout">
+          <div class="metric">
+            <span class="metric-label">EAR</span>
+            <span class="metric-value" id="earValue">&mdash;</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">State</span>
+            <span class="metric-value" id="stateValue">&mdash;</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Closed frames</span>
+            <span class="metric-value" id="closedValue">0</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">FPS</span>
+            <span class="metric-value" id="fpsValue">0</span>
+          </div>
+        </div>
+
+        <div class="ear-graph" aria-hidden="true">
+          <canvas id="earGraph"></canvas>
+        </div>
+      </section>
+
+      <aside class="panel" aria-label="Controls">
+        <h2 class="panel-title">Detector</h2>
+
+        <div class="control">
+          <label for="threshold">EAR threshold
+            <output id="thresholdOut">0.25</output>
+          </label>
+          <input type="range" id="threshold" min="0.10" max="0.40" step="0.01" value="0.25" />
+          <p class="control-hint">Eyes counted "closed" below this ratio.</p>
+        </div>
+
+        <div class="control">
+          <label for="closedFrames">Frames to alarm
+            <output id="closedFramesOut">20</output>
+          </label>
+          <input type="range" id="closedFrames" min="3" max="60" step="1" value="20" />
+          <p class="control-hint">Consecutive closed frames before AWAKE&rarr;DROWSY.</p>
+        </div>
+
+        <div class="control">
+          <label for="openFrames">Frames to clear
+            <output id="openFramesOut">5</output>
+          </label>
+          <input type="range" id="openFrames" min="1" max="30" step="1" value="5" />
+          <p class="control-hint">Open frames before DROWSY&rarr;AWAKE.</p>
+        </div>
+
+        <div class="control control--row">
+          <label for="alarmToggle">Audible alarm</label>
+          <label class="switch">
+            <input type="checkbox" id="alarmToggle" checked />
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+        </div>
+
+        <div class="control control--row">
+          <label for="meshToggle">Draw full mesh</label>
+          <label class="switch">
+            <input type="checkbox" id="meshToggle" />
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+        </div>
+
+        <button id="stopBtn" class="ghost-btn" type="button" disabled>Stop camera</button>
+
+        <div class="stat-block">
+          <h3>Session</h3>
+          <dl>
+            <div><dt>Drowsy events</dt><dd id="eventCount">0</dd></div>
+            <div><dt>Min EAR seen</dt><dd id="minEar">&mdash;</dd></div>
+            <div><dt>Uptime</dt><dd id="uptime">0s</dd></div>
+          </dl>
+        </div>
+
+        <p class="formula">
+          EAR = (&Vert;p2&minus;p6&Vert; + &Vert;p3&minus;p5&Vert;) / (2&middot;&Vert;p1&minus;p4&Vert;)
+        </p>
+      </aside>
+    </main>
+
+    <footer class="foot">
+      <span>Same EAR + finite-state machine as the Python package (<code>ear_threshold=0.25</code>, <code>20</code>&rarr;drowsy, <code>5</code>&rarr;clear).</span>
+      <span class="foot-sep">&middot;</span>
+      <span>Soukup&aacute; &amp; &Ccaron;ech blink-detection landmarks.</span>
+    </footer>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
