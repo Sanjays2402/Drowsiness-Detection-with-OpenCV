@@ -1,326 +1,249 @@
 /**
- * Drowsiness Detection — browser demo.
+ * Vigil — browser drowsiness detector.
  *
- * Faithful JS port of the Python package's detection pipeline:
- *   - MediaPipe FaceMesh landmarks (same six EAR indices per eye)
- *   - Eye Aspect Ratio:  EAR = (||p2-p6|| + ||p3-p5||) / (2*||p1-p4||)
- *   - Finite-state machine: AWAKE --(EAR<thr for N frames)--> DROWSY
- *                           DROWSY --(EAR>=thr for M frames)--> AWAKE
+ * Detection is a faithful port of the Python package:
+ *   - MediaPipe FaceMesh landmarks (same six EAR indices per eye)   [landmarks.py]
+ *   - EAR = (||p2-p6|| + ||p3-p5||) / (2*||p1-p4||)                  [ear.py]
+ *   - FSM: AWAKE --(EAR<thr for N frames)--> DROWSY                  [detector.py]
+ *          DROWSY --(EAR>=thr for M frames)--> AWAKE
+ *   - Defaults mirror DrowsinessConfig: 0.25 / 20 / 5.
  *
- * Defaults mirror drowsiness/detector.py:DrowsinessConfig
- *   ear_threshold = 0.25, closed_frames_to_alarm = 20, open_frames_to_clear = 5.
- *
- * Everything runs client-side. No frame ever leaves the browser.
- *
- * NOTE: @mediapipe/face_mesh ships as a UMD bundle (not an ES module), so it is
- * loaded via a classic <script> tag in index.html and exposed as window.FaceMesh.
+ * Everything runs client-side; no frame leaves the browser.
+ * @mediapipe/face_mesh is a UMD bundle (not an ES module): loaded via a deferred
+ * classic <script> in index.html, read off window lazily inside start().
  */
 
-const FaceMesh = window.FaceMesh;
-
-// Same indices as drowsiness/landmarks.py (_MP_LEFT_EYE / _MP_RIGHT_EYE):
-// order = outer, upper-outer, upper-inner, inner, lower-inner, lower-outer.
+// Same indices as drowsiness/landmarks.py (_MP_LEFT_EYE / _MP_RIGHT_EYE).
 const LEFT_EYE = [33, 160, 158, 133, 153, 144];
 const RIGHT_EYE = [263, 387, 385, 362, 380, 373];
 
-// ---- EAR (ports drowsiness/ear.py) ---------------------------------------
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
 function eyeAspectRatio(eye) {
   const [p1, p2, p3, p4, p5, p6] = eye;
-  const horizontal = dist(p1, p4);
-  if (horizontal <= 1e-6) return 0.0;
-  return (dist(p2, p6) + dist(p3, p5)) / (2.0 * horizontal);
+  const h = dist(p1, p4);
+  if (h <= 1e-6) return 0;
+  return (dist(p2, p6) + dist(p3, p5)) / (2 * h);
 }
-const averageEar = (l, r) => (eyeAspectRatio(l) + eyeAspectRatio(r)) / 2.0;
+const averageEar = (l, r) => (eyeAspectRatio(l) + eyeAspectRatio(r)) / 2;
 
-// ---- finite-state machine (ports DrowsinessDetector._update_state) -------
-class DrowsinessFSM {
-  constructor(cfg) {
-    this.cfg = cfg;
-    this.state = "awake";
-    this.closedFrames = 0;
-    this.openFrames = 0;
-  }
-  reset() { this.state = "awake"; this.closedFrames = 0; this.openFrames = 0; }
-  /** @returns {boolean} true exactly on an AWAKE->DROWSY transition */
+class FSM {
+  constructor(cfg) { this.cfg = cfg; this.reset(); }
+  reset() { this.state = "awake"; this.closed = 0; this.open = 0; }
   update(ear) {
     const c = this.cfg;
-    let transitioned = false;
-    if (ear < c.earThreshold) {
-      this.closedFrames += 1;
-      this.openFrames = 0;
-      if (this.state === "awake" && this.closedFrames >= c.closedFramesToAlarm) {
-        this.state = "drowsy";
-        transitioned = true;
-      }
+    let fired = false;
+    if (ear < c.thr) {
+      this.closed++; this.open = 0;
+      if (this.state === "awake" && this.closed >= c.frames) { this.state = "drowsy"; fired = true; }
     } else {
-      this.openFrames += 1;
-      if (this.state === "drowsy" && this.openFrames >= c.openFramesToClear) {
-        this.state = "awake";
-        this.closedFrames = 0;
-      } else if (this.state === "awake") {
-        this.closedFrames = 0;
-      }
+      this.open++;
+      if (this.state === "drowsy" && this.open >= c.clear) { this.state = "awake"; this.closed = 0; }
+      else if (this.state === "awake") this.closed = 0;
     }
-    return transitioned;
+    return fired;
   }
 }
 
-// ---- tiny WebAudio alarm (no asset needed; mirrors the alarm trigger) ----
-class Beeper {
-  constructor() { this.ctx = null; this.lastAt = 0; this.cooldownMs = 3000; }
+class Alarm {
+  constructor() { this.ctx = null; this.last = 0; this.cooldown = 3000; }
   trigger() {
-    if (typeof AudioContext === "undefined" && typeof webkitAudioContext === "undefined") return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
     const now = performance.now();
-    if (now - this.lastAt < this.cooldownMs) return;
-    this.lastAt = now;
-    this.ctx = this.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    if (now - this.last < this.cooldown) return;
+    this.last = now;
+    this.ctx = this.ctx || new AC();
     const t = this.ctx.currentTime;
     for (let i = 0; i < 3; i++) {
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = "square";
-      osc.frequency.value = 880;
-      const start = t + i * 0.22;
-      gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
-      osc.connect(gain).connect(this.ctx.destination);
-      osc.start(start);
-      osc.stop(start + 0.2);
+      const o = this.ctx.createOscillator(), g = this.ctx.createGain();
+      o.type = "sine"; o.frequency.value = 760;
+      const s = t + i * 0.24;
+      g.gain.setValueAtTime(0.0001, s);
+      g.gain.exponentialRampToValueAtTime(0.2, s + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, s + 0.2);
+      o.connect(g).connect(this.ctx.destination);
+      o.start(s); o.stop(s + 0.22);
     }
   }
 }
 
-// ---- DOM refs ------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 const video = $("video");
 const overlay = $("overlay");
 const octx = overlay.getContext("2d");
-const earGraph = $("earGraph");
-const gctx = earGraph.getContext("2d");
+const graph = $("graph");
+const gctx = graph.getContext("2d");
 
-const els = {
-  banner: $("banner"), bannerText: $("banner-text"),
-  ear: $("earValue"), state: $("stateValue"), closed: $("closedValue"), fps: $("fpsValue"),
-  startCover: $("startCover"), startBtn: $("startBtn"), loadCover: $("loadCover"), loadText: $("loadText"),
-  stopBtn: $("stopBtn"), eventCount: $("eventCount"), minEar: $("minEar"), uptime: $("uptime"),
-  threshold: $("threshold"), thresholdOut: $("thresholdOut"),
-  closedFrames: $("closedFrames"), closedFramesOut: $("closedFramesOut"),
-  openFrames: $("openFrames"), openFramesOut: $("openFramesOut"),
-  alarmToggle: $("alarmToggle"), meshToggle: $("meshToggle"),
+const el = {
+  start: $("startBtn"), stop: $("stopBtn"), load: $("loadCover"), loadText: $("loadText"),
+  camStatus: $("camStatus"), statusLine: $("statusLine"), statusText: $("statusText"),
+  rEar: $("rEar"), rClosed: $("rClosed"), rEvents: $("rEvents"), rFps: $("rFps"),
+  thr: $("threshold"), thrOut: $("thrOut"), frames: $("frames"), framesOut: $("framesOut"),
+  graphThr: $("graphThr"), alarm: $("alarmToggle"), mesh: $("meshToggle"),
 };
 
-// ---- config wired to the sliders -----------------------------------------
-const cfg = { earThreshold: 0.25, closedFramesToAlarm: 20, openFramesToClear: 5 };
-const fsm = new DrowsinessFSM(cfg);
-const beeper = new Beeper();
+const cfg = { thr: 0.25, frames: 20, clear: 5 };
+const fsm = new FSM(cfg);
+const alarm = new Alarm();
 
-function bindRange(input, out, key, parse) {
-  const sync = () => { const v = parse(input.value); cfg[key] = v; out.textContent = input.value; };
+function bind(input, out, key, parse, fmt) {
+  const sync = () => {
+    cfg[key] = parse(input.value);
+    out.textContent = fmt ? fmt(input.value) : input.value;
+    if (key === "thr") el.graphThr.textContent = `threshold ${cfg.thr.toFixed(2)}`;
+  };
   input.addEventListener("input", sync); sync();
 }
-bindRange(els.threshold, els.thresholdOut, "earThreshold", parseFloat);
-bindRange(els.closedFrames, els.closedFramesOut, "closedFramesToAlarm", (v) => parseInt(v, 10));
-bindRange(els.openFrames, els.openFramesOut, "openFramesToClear", (v) => parseInt(v, 10));
+bind(el.thr, el.thrOut, "thr", parseFloat, (v) => parseFloat(v).toFixed(2));
+bind(el.frames, el.framesOut, "frames", (v) => parseInt(v, 10));
 
-// ---- session stats + EAR history -----------------------------------------
-const session = { events: 0, minEar: Infinity, startedAt: 0, lastLm: null };
-const earHistory = new Array(160).fill(null);
+const sess = { events: 0 };
+const HIST = 200;
+const hist = new Array(HIST).fill(null);
 
-// ---- rendering -----------------------------------------------------------
-function fitCanvas(cv) {
+function fit(cv) {
   const r = cv.getBoundingClientRect();
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  cv.width = Math.round(r.width * dpr);
-  cv.height = Math.round(r.height * dpr);
+  cv.width = Math.max(1, Math.round(r.width * dpr));
+  cv.height = Math.max(1, Math.round(r.height * dpr));
   return dpr;
 }
 
-function drawOverlay(landmarks, ear, drowsy) {
-  octx.clearRect(0, 0, overlay.width, overlay.height);
-  if (!landmarks) return;
-  const W = overlay.width, H = overlay.height;
-
-  if (els.meshToggle.checked) {
-    octx.fillStyle = "rgba(91,140,255,0.35)";
-    for (const p of landmarks) { octx.beginPath(); octx.arc(p.x * W, p.y * H, 1.1, 0, Math.PI * 2); octx.fill(); }
-  }
-
-  const color = drowsy ? "#ff5a5f" : ear < cfg.earThreshold ? "#ffb454" : "#2fd47a";
-  for (const idx of [LEFT_EYE, RIGHT_EYE]) {
-    octx.beginPath();
-    idx.forEach((i, k) => {
-      const p = landmarks[i];
-      const x = p.x * W, y = p.y * H;
-      k === 0 ? octx.moveTo(x, y) : octx.lineTo(x, y);
-    });
-    octx.closePath();
-    octx.lineWidth = 2.2;
-    octx.strokeStyle = color;
-    octx.stroke();
-    octx.fillStyle = color + "22";
-    octx.fill();
-  }
-}
-
+// EAR graph on a light background
 function drawGraph() {
-  const dpr = fitCanvas(earGraph);
-  const W = earGraph.width, H = earGraph.height;
+  const dpr = fit(graph);
+  const W = graph.width, H = graph.height;
   gctx.clearRect(0, 0, W, H);
-  const min = 0.05, max = 0.42;
+  const min = 0.05, max = 0.45;
   const y = (e) => H - ((e - min) / (max - min)) * H;
 
   // threshold line
-  gctx.strokeStyle = "rgba(255,180,84,0.55)";
+  const ty = y(cfg.thr);
+  gctx.strokeStyle = "#d9b8a0";
   gctx.lineWidth = 1 * dpr;
-  gctx.setLineDash([4 * dpr, 4 * dpr]);
-  gctx.beginPath(); gctx.moveTo(0, y(cfg.earThreshold)); gctx.lineTo(W, y(cfg.earThreshold)); gctx.stroke();
+  gctx.setLineDash([5 * dpr, 4 * dpr]);
+  gctx.beginPath(); gctx.moveTo(0, ty); gctx.lineTo(W, ty); gctx.stroke();
   gctx.setLineDash([]);
 
-  // EAR trace
+  // trace
   gctx.beginPath();
   let started = false;
-  earHistory.forEach((e, i) => {
+  hist.forEach((e, i) => {
     if (e == null) { started = false; return; }
-    const x = (i / (earHistory.length - 1)) * W;
+    const x = (i / (HIST - 1)) * W;
     const yy = y(Math.max(min, Math.min(max, e)));
     started ? gctx.lineTo(x, yy) : gctx.moveTo(x, yy);
     started = true;
   });
-  gctx.strokeStyle = "#5b8cff";
-  gctx.lineWidth = 1.6 * dpr;
+  gctx.strokeStyle = fsm.state === "drowsy" ? "#c4452f" : "#b87a2b";
+  gctx.lineWidth = 1.8 * dpr;
+  gctx.lineJoin = "round";
   gctx.stroke();
 }
 
-// ---- per-frame result handler --------------------------------------------
-let frames = 0, fpsAt = performance.now();
-
-function onResults(results) {
-  const lm = results.multiFaceLandmarks && results.multiFaceLandmarks[0];
-  let ear = 0, faceFound = !!lm;
-
-  if (faceFound) {
-    const left = LEFT_EYE.map((i) => lm[i]);
-    const right = RIGHT_EYE.map((i) => lm[i]);
-    ear = averageEar(left, right);
-    const transitioned = fsm.update(ear);
-    if (transitioned) {
-      session.events += 1;
-      els.eventCount.textContent = session.events;
-      if (els.alarmToggle.checked) beeper.trigger();
-    }
-    if (ear < session.minEar) { session.minEar = ear; els.minEar.textContent = ear.toFixed(3); }
-    session.lastLm = lm;
-  }
-
-  // history + readouts
-  earHistory.push(faceFound ? ear : null);
-  earHistory.shift();
-  els.ear.textContent = faceFound ? ear.toFixed(3) : "—";
-  els.state.textContent = fsm.state === "drowsy" ? "DROWSY" : "AWAKE";
-  els.state.style.color = fsm.state === "drowsy" ? "var(--drowsy)" : "var(--awake)";
-  els.closed.textContent = fsm.closedFrames;
-
-  // banner
+function drawOverlay(lm) {
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!lm) return;
+  const W = overlay.width, H = overlay.height;
   const drowsy = fsm.state === "drowsy";
-  let cls = "banner--awake", txt = "Awake";
-  if (!faceFound) { cls = "banner--noface"; txt = "No face detected"; }
-  else if (drowsy) { cls = "banner--drowsy"; txt = "DROWSY — wake up!"; }
-  els.banner.className = "banner " + cls;
-  els.bannerText.textContent = txt;
-  overlay.parentElement.classList.toggle("is-drowsy", drowsy);
-
-  drawOverlay(faceFound ? lm : null, ear, drowsy);
-
-  // fps
-  frames++;
-  const now = performance.now();
-  if (now - fpsAt >= 500) {
-    els.fps.textContent = Math.round((frames * 1000) / (now - fpsAt));
-    frames = 0; fpsAt = now;
+  const col = drowsy ? "#ff7a5c" : "#ffd9a0";
+  if (el.mesh.checked) {
+    octx.fillStyle = "rgba(255,255,255,0.4)";
+    for (const p of lm) { octx.beginPath(); octx.arc(p.x * W, p.y * H, 1, 0, Math.PI * 2); octx.fill(); }
+  }
+  for (const idx of [LEFT_EYE, RIGHT_EYE]) {
+    octx.beginPath();
+    idx.forEach((i, k) => { const p = lm[i]; const x = p.x * W, y = p.y * H; k ? octx.lineTo(x, y) : octx.moveTo(x, y); });
+    octx.closePath();
+    octx.lineWidth = 2.4; octx.strokeStyle = col; octx.stroke();
+    octx.fillStyle = col + "30"; octx.fill();
   }
 }
 
-// ---- camera + mediapipe loop ---------------------------------------------
-let faceMesh = null, stream = null, running = false, rafId = null;
+function setStatus(cls, text, cam) {
+  el.statusLine.className = "status-line" + (cls ? " " + cls : "");
+  el.statusText.textContent = text;
+  if (cam !== undefined) el.camStatus.textContent = cam;
+}
+
+let frames = 0, fpsAt = performance.now();
+function onResults(res) {
+  const lm = res.multiFaceLandmarks && res.multiFaceLandmarks[0];
+  let e = 0;
+  if (lm) {
+    e = averageEar(LEFT_EYE.map((i) => lm[i]), RIGHT_EYE.map((i) => lm[i]));
+    if (fsm.update(e)) { sess.events++; el.rEvents.textContent = sess.events; if (el.alarm.checked) alarm.trigger(); }
+  }
+  hist.push(lm ? e : null); hist.shift();
+
+  el.rEar.textContent = lm ? e.toFixed(3) : "—";
+  el.rClosed.textContent = fsm.closed;
+
+  const drowsy = fsm.state === "drowsy";
+  if (!lm) setStatus("is-warn", "Looking for a face", "No face");
+  else if (drowsy) setStatus("is-alert", "Drowsy — wake up", "Alert");
+  else if (e < cfg.thr) setStatus("is-warn", "Eyes closing", "Live");
+  else setStatus("is-ok", "Alert and awake", "Live");
+
+  drawOverlay(lm);
+
+  frames++;
+  const now = performance.now();
+  if (now - fpsAt >= 500) { el.rFps.innerHTML = `${Math.round((frames * 1000) / (now - fpsAt))}<small>fps</small>`; frames = 0; fpsAt = now; }
+}
+
+let mesh = null, stream = null, running = false, raf = null;
 
 async function start() {
-  els.startCover.hidden = true;
-  els.loadCover.hidden = false;
-
+  el.start.hidden = true;
+  el.load.hidden = false;
   try {
-    els.loadText.textContent = "Requesting camera…";
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-      audio: false,
-    });
-    video.srcObject = stream;
-    await video.play();
+    el.loadText.textContent = "Requesting camera";
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    video.srcObject = stream; await video.play();
   } catch (err) {
-    els.loadCover.hidden = true;
-    els.startCover.hidden = false;
-    els.banner.className = "banner banner--noface";
-    els.bannerText.textContent = "Camera blocked";
-    els.startBtn.textContent = "Camera permission denied — retry";
+    el.load.hidden = true; el.start.hidden = false;
+    setStatus("is-alert", "Camera blocked", "Blocked");
     return;
   }
 
-  els.loadText.textContent = "Loading FaceMesh model…";
-  faceMesh = new FaceMesh({
-    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${f}`,
-  });
-  faceMesh.setOptions({
-    maxNumFaces: 1,
-    refineLandmarks: false,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
-  });
-  faceMesh.onResults(onResults);
+  el.loadText.textContent = "Loading model";
+  const FaceMesh = window.FaceMesh;
+  if (typeof FaceMesh !== "function") { el.loadText.textContent = "Model unavailable. Check the network."; return; }
+  mesh = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${f}` });
+  mesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+  mesh.onResults(onResults);
 
-  fitCanvas(overlay);
-  await faceMesh.send({ image: video }); // warm up / triggers wasm fetch
-  els.loadCover.hidden = true;
+  fit(overlay);
+  await mesh.send({ image: video });
+  el.load.hidden = true;
 
   running = true;
-  session.startedAt = performance.now();
-  els.stopBtn.disabled = false;
   fsm.reset();
+  el.stop.disabled = false;
+  setStatus("is-ok", "Alert and awake", "Live");
   loop();
-  tickUptime();
 }
 
 async function loop() {
   if (!running) return;
-  if (video.readyState >= 2) {
-    try { await faceMesh.send({ image: video }); } catch (_) { /* keep looping */ }
-    drawGraph();
-  }
-  rafId = requestAnimationFrame(loop);
+  if (video.readyState >= 2) { try { await mesh.send({ image: video }); } catch (_) {} }
+  drawGraph();
+  raf = requestAnimationFrame(loop);
 }
 
 function stop() {
   running = false;
-  if (rafId) cancelAnimationFrame(rafId);
+  if (raf) cancelAnimationFrame(raf);
   if (stream) stream.getTracks().forEach((t) => t.stop());
   octx.clearRect(0, 0, overlay.width, overlay.height);
-  els.stopBtn.disabled = true;
-  els.startCover.hidden = false;
-  els.startBtn.textContent = "Resume camera";
-  els.banner.className = "banner banner--idle";
-  els.bannerText.textContent = "Camera off";
-  overlay.parentElement.classList.remove("is-drowsy");
+  el.stop.disabled = true;
+  el.start.hidden = false;
+  el.start.childNodes[2] && (el.start.childNodes[2].textContent = " Resume camera");
+  setStatus("", "Standby", "Camera off");
 }
 
-function tickUptime() {
-  if (!running) return;
-  const s = Math.floor((performance.now() - session.startedAt) / 1000);
-  els.uptime.textContent = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-  setTimeout(tickUptime, 1000);
-}
-
-els.startBtn.addEventListener("click", start);
-els.stopBtn.addEventListener("click", stop);
-window.addEventListener("resize", () => { fitCanvas(overlay); drawGraph(); });
+el.start.addEventListener("click", start);
+el.stop.addEventListener("click", stop);
+window.addEventListener("resize", drawGraph);
 drawGraph();

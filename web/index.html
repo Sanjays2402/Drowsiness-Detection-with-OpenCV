@@ -1,146 +1,185 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Drowsiness Detection — Live EAR Demo</title>
-  <meta name="description" content="In-browser real-time driver drowsiness detection using the Eye Aspect Ratio (EAR) and MediaPipe FaceMesh. Runs fully client-side — no video leaves your device." />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235b8cff'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='white' stroke-width='2.5' stroke-dasharray='33' stroke-dashoffset='8'/%3E%3C/svg%3E" />
+  <title>Vigil — real-time drowsiness detection</title>
+  <meta name="description" content="Vigil watches for the moment a driver's eyes start to close, using the Eye Aspect Ratio and on-device computer vision. Published at IEEE ICCMC 2021. Runs entirely in your browser." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" media="print" onload="this.media='all'" />
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" /></noscript>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f1115'/%3E%3Ccircle cx='16' cy='16' r='6.5' fill='none' stroke='%23e8c37e' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23e8c37e'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
-  <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <div class="brand-text">
-          <h1>Drowsiness Detection</h1>
-          <p>Real-time Eye Aspect Ratio &middot; MediaPipe FaceMesh &middot; 100% on-device</p>
-        </div>
+
+  <!-- NAV -->
+  <header class="nav">
+    <a class="wordmark" href="#top">
+      <span class="wordmark-eye" aria-hidden="true"></span>
+      Vigil
+    </a>
+    <nav class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#demo">Live demo</a>
+      <a href="#paper">Research</a>
+    </nav>
+    <a class="nav-cta" href="#demo">Try it</a>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero" id="top">
+    <div class="hero-media">
+      <img src="./assets/hero-road.jpg" alt="A driver's view of a dark highway at night, lane markings lit by headlights" />
+      <div class="hero-scrim" aria-hidden="true"></div>
+    </div>
+    <div class="hero-copy">
+      <p class="kicker">Driver vigilance, in real time</p>
+      <h1>It notices the moment<br>your eyes start to close.</h1>
+      <p class="lede">
+        Vigil reads the subtle geometry of an eye and raises the alarm the instant
+        drowsiness sets in. On-device computer vision, no footage ever leaves the car.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#demo">Open the live demo</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
       </div>
-      <a class="paper-link" href="https://ieeexplore.ieee.org/document/9532758" target="_blank" rel="noopener">
-        IEEE&nbsp;Paper&nbsp;&rarr;
-      </a>
+    </div>
+  </section>
+
+  <!-- TRUST STRIP -->
+  <section class="proof">
+    <div class="proof-item"><span class="proof-n">0.25</span><span class="proof-l">EAR alarm threshold</span></div>
+    <div class="proof-item"><span class="proof-n">30 fps</span><span class="proof-l">real-time on a laptop</span></div>
+    <div class="proof-item"><span class="proof-n">IEEE</span><span class="proof-l">peer-reviewed, ICCMC 2021</span></div>
+    <div class="proof-item"><span class="proof-n">0 bytes</span><span class="proof-l">leave your device</span></div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how" id="how">
+    <header class="section-head">
+      <p class="kicker kicker-dark">The idea</p>
+      <h2>One ratio tells you when an eye closes.</h2>
+      <p class="section-sub">
+        The Eye Aspect Ratio compares the height of an eye to its width. Open eyes hold a
+        steady value; as the lids fall, it collapses toward zero. Track it across frames and
+        drowsiness becomes a number you can act on.
+      </p>
     </header>
 
-    <main class="stage">
-      <section class="viewport-wrap" aria-label="Camera viewport">
-        <div class="viewport">
+    <div class="how-grid">
+      <article class="how-step">
+        <span class="how-num">01</span>
+        <h3>Find the eyes</h3>
+        <p>MediaPipe FaceMesh locates 468 facial landmarks, six per eye, on every frame from the camera.</p>
+      </article>
+      <article class="how-step">
+        <span class="how-num">02</span>
+        <h3>Measure the ratio</h3>
+        <p>Vigil computes the Eye Aspect Ratio from those six points, the same formula Soukup&aacute; and &Ccaron;ech defined for blink detection.</p>
+      </article>
+      <article class="how-step">
+        <span class="how-num">03</span>
+        <h3>Watch for the dip</h3>
+        <p>A small state machine waits until the ratio stays below threshold for twenty straight frames, then sounds the alarm.</p>
+      </article>
+    </div>
+
+    <figure class="how-portrait">
+      <img src="./assets/portrait.jpg" alt="Studio portrait of a person, eyes open and alert" />
+      <figcaption>
+        <span class="formula">EAR = (&Vert;p&#8322;&minus;p&#8326;&Vert; + &Vert;p&#8323;&minus;p&#8325;&Vert;) / 2&Vert;p&#8321;&minus;p&#8324;&Vert;</span>
+        <p>Higher means open. Lower means the lids are falling. The threshold sits at 0.25.</p>
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- LIVE DEMO -->
+  <section class="demo" id="demo">
+    <header class="section-head">
+      <p class="kicker kicker-dark">Live demo</p>
+      <h2>Try it on your own camera.</h2>
+      <p class="section-sub">
+        Everything below runs in this browser tab. Grant camera access, close your eyes for a
+        second, and watch the reading fall past the line.
+      </p>
+    </header>
+
+    <div class="console">
+      <!-- camera -->
+      <figure class="cam">
+        <div class="cam-frame">
           <video id="video" playsinline muted></video>
           <canvas id="overlay"></canvas>
+          <span class="cam-status" id="camStatus">Camera off</span>
 
-          <div id="banner" class="banner banner--idle">
-            <span class="banner-dot"></span>
-            <span id="banner-text">Camera off</span>
-          </div>
+          <button id="startBtn" class="cam-start" type="button">
+            <span class="cam-start-ring" aria-hidden="true"></span>
+            Start camera
+            <small>Nothing is uploaded. Processing stays on-device.</small>
+          </button>
+          <div id="loadCover" class="cam-load" hidden><span class="cam-load-bar" aria-hidden="true"></span><span id="loadText">Loading model</span></div>
+        </div>
+      </figure>
 
-          <div id="startCover" class="start-cover">
-            <button id="startBtn" class="start-btn" type="button">
-              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-              Start camera
-            </button>
-            <p class="start-hint">Nothing is uploaded. All processing happens in this tab.</p>
-          </div>
-
-          <div id="loadCover" class="load-cover" hidden>
-            <div class="spinner" aria-hidden="true"></div>
-            <p id="loadText">Loading FaceMesh model&hellip;</p>
-          </div>
+      <!-- readouts + graph -->
+      <div class="panel">
+        <div class="status-line" id="statusLine">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="statusText">Standby</span>
         </div>
 
-        <div class="readout">
-          <div class="metric">
-            <span class="metric-label">EAR</span>
-            <span class="metric-value" id="earValue">&mdash;</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">State</span>
-            <span class="metric-value" id="stateValue">&mdash;</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">Closed frames</span>
-            <span class="metric-value" id="closedValue">0</span>
-          </div>
-          <div class="metric">
-            <span class="metric-label">FPS</span>
-            <span class="metric-value" id="fpsValue">0</span>
-          </div>
+        <div class="readings">
+          <div class="reading"><span class="reading-k">Eye Aspect Ratio</span><span class="reading-v" id="rEar">&mdash;</span></div>
+          <div class="reading"><span class="reading-k">Frames closed</span><span class="reading-v" id="rClosed">0</span></div>
+          <div class="reading"><span class="reading-k">Alerts</span><span class="reading-v" id="rEvents">0</span></div>
+          <div class="reading"><span class="reading-k">Rate</span><span class="reading-v" id="rFps">0<small>fps</small></span></div>
         </div>
 
-        <div class="ear-graph" aria-hidden="true">
-          <canvas id="earGraph"></canvas>
-        </div>
-      </section>
+        <figure class="graph">
+          <figcaption>EAR over time<span id="graphThr">threshold 0.25</span></figcaption>
+          <canvas id="graph"></canvas>
+        </figure>
 
-      <aside class="panel" aria-label="Controls">
-        <h2 class="panel-title">Detector</h2>
-
-        <div class="control">
-          <label for="threshold">EAR threshold
-            <output id="thresholdOut">0.25</output>
+        <div class="controls">
+          <label class="ctrl">
+            <span class="ctrl-row"><span>Threshold</span><output id="thrOut">0.25</output></span>
+            <input type="range" id="threshold" min="0.10" max="0.40" step="0.01" value="0.25" />
           </label>
-          <input type="range" id="threshold" min="0.10" max="0.40" step="0.01" value="0.25" />
-          <p class="control-hint">Eyes counted "closed" below this ratio.</p>
-        </div>
-
-        <div class="control">
-          <label for="closedFrames">Frames to alarm
-            <output id="closedFramesOut">20</output>
+          <label class="ctrl">
+            <span class="ctrl-row"><span>Frames to alarm</span><output id="framesOut">20</output></span>
+            <input type="range" id="frames" min="3" max="60" step="1" value="20" />
           </label>
-          <input type="range" id="closedFrames" min="3" max="60" step="1" value="20" />
-          <p class="control-hint">Consecutive closed frames before AWAKE&rarr;DROWSY.</p>
+          <div class="ctrl-toggles">
+            <label class="switch"><input type="checkbox" id="alarmToggle" checked /><span></span>Alarm sound</label>
+            <label class="switch"><input type="checkbox" id="meshToggle" /><span></span>Show mesh</label>
+          </div>
+          <button id="stopBtn" class="btn btn-stop" type="button" disabled>Stop camera</button>
         </div>
+      </div>
+    </div>
+  </section>
 
-        <div class="control">
-          <label for="openFrames">Frames to clear
-            <output id="openFramesOut">5</output>
-          </label>
-          <input type="range" id="openFrames" min="1" max="30" step="1" value="5" />
-          <p class="control-hint">Open frames before DROWSY&rarr;AWAKE.</p>
-        </div>
+  <!-- RESEARCH -->
+  <section class="paper" id="paper">
+    <div class="paper-inner">
+      <p class="kicker kicker-dark">Research</p>
+      <blockquote>
+        Vigil began as a peer-reviewed paper on real-time drowsiness detection, presented at the
+        5th IEEE International Conference on Computing Methodologies and Communication.
+      </blockquote>
+      <cite>S. Santhanam et al. &middot; IEEE ICCMC 2021</cite>
+      <a class="btn btn-primary" href="https://ieeexplore.ieee.org/document/9532758" target="_blank" rel="noopener">Read the paper</a>
+    </div>
+  </section>
 
-        <div class="control control--row">
-          <label for="alarmToggle">Audible alarm</label>
-          <label class="switch">
-            <input type="checkbox" id="alarmToggle" checked />
-            <span class="switch-track" aria-hidden="true"></span>
-          </label>
-        </div>
+  <footer class="foot">
+    <span class="wordmark"><span class="wordmark-eye" aria-hidden="true"></span> Vigil</span>
+    <p>Built on the open-source drowsiness-detection package. The browser demo mirrors the Python detector exactly: threshold 0.25, twenty frames to alarm, five to clear.</p>
+  </footer>
 
-        <div class="control control--row">
-          <label for="meshToggle">Draw full mesh</label>
-          <label class="switch">
-            <input type="checkbox" id="meshToggle" />
-            <span class="switch-track" aria-hidden="true"></span>
-          </label>
-        </div>
-
-        <button id="stopBtn" class="ghost-btn" type="button" disabled>Stop camera</button>
-
-        <div class="stat-block">
-          <h3>Session</h3>
-          <dl>
-            <div><dt>Drowsy events</dt><dd id="eventCount">0</dd></div>
-            <div><dt>Min EAR seen</dt><dd id="minEar">&mdash;</dd></div>
-            <div><dt>Uptime</dt><dd id="uptime">0s</dd></div>
-          </dl>
-        </div>
-
-        <p class="formula">
-          EAR = (&Vert;p2&minus;p6&Vert; + &Vert;p3&minus;p5&Vert;) / (2&middot;&Vert;p1&minus;p4&Vert;)
-        </p>
-      </aside>
-    </main>
-
-    <footer class="foot">
-      <span>Same EAR + finite-state machine as the Python package (<code>ear_threshold=0.25</code>, <code>20</code>&rarr;drowsy, <code>5</code>&rarr;clear).</span>
-      <span class="foot-sep">&middot;</span>
-      <span>Soukup&aacute; &amp; &Ccaron;ech blink-detection landmarks.</span>
-    </footer>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous" defer></script>
   <script type="module" src="./app.js"></script>
 </body>
 </html>
